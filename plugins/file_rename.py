@@ -46,6 +46,8 @@ USER_LIMITS = {}
 global PREMIUM_MODE, PREMIUM_MODE_EXPIRY
 PREMIUM_MODE = Config.GLOBAL_TOKEN_MODE
 PREMIUM_MODE_EXPIRY = Config.GLOBAL_TOKEN_MODE
+CON_LIMIT_ADMIN = Config.ADMIN_OR_PREMIUM_TASK_LIMIT
+CON_LIMIT_NORMAL = Config.NORMAL_TASK_LIMIT
 
 class TaskQueue:
     def __init__(self):
@@ -62,7 +64,7 @@ class TaskQueue:
         self.queues[user_id].append((file_id, coro))
         
         if user_id not in USER_SEMAPHORES:
-            concurrency_limit = Config.ADMIN_OR_PREMIUM_TASK_LIMIT if user_id in Config.ADMIN else Config.NORMAL_TASK_LIMIT
+            concurrency_limit = CON_LIMIT if user_id in Config.ADMIN else CON_LIMIT_NORMAL
             USER_SEMAPHORES[user_id] = asyncio.Semaphore(concurrency_limit)
             USER_LIMITS[user_id] = concurrency_limit
             
