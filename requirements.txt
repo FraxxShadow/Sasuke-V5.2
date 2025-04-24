@@ -1,0 +1,15 @@
+pyrogram==2.0.80
+TgCrypto
+motor
+dnspython
+hachoir
+Pillow
+aiohttp
+pytz
+humanize
+pyromod
+ffmpeg-python
+shortzy
+filelock
+psutil
+aiofiles
