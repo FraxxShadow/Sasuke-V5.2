@@ -64,7 +64,7 @@ class TaskQueue:
         self.queues[user_id].append((file_id, coro))
         
         if user_id not in USER_SEMAPHORES:
-            concurrency_limit = CON_LIMIT if user_id in Config.ADMIN else CON_LIMIT_NORMAL
+            concurrency_limit = CON_LIMIT_ADMIN if user_id in Config.ADMIN else CON_LIMIT_NORMAL
             USER_SEMAPHORES[user_id] = asyncio.Semaphore(concurrency_limit)
             USER_LIMITS[user_id] = concurrency_limit
             
