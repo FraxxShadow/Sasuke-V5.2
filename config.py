@@ -6,9 +6,9 @@ id_pattern = re.compile(r'^.\d+$')
 class Config(object):
     API_ID    = os.environ.get("API_ID", "17417255")
     API_HASH  = os.environ.get("API_HASH", "73d424d9847f968130cd5b41946f7a5d")
-    BOT_TOKEN = os.environ.get("BOT_TOKEN", "7273299519:AAHxRAL5SBMuOkG0gLDYa8PoovxBNu8C7D0") 
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", "7052382347:AAE8JaBHoK2acDxBkWNBvKj4vqT0XmWQX98") 
 
-    DB_NAME = os.environ.get("DB_NAME","RenamerBot")     
+    DB_NAME = os.environ.get("DB_NAME","RenamerBot1")     
     DB_URL  = os.environ.get("DB_URL","mongodb+srv://nitinkumardhundhara:DARKXSIDE78@cluster0.wdive.mongodb.net/?retryWrites=true&w=majority")
     PORT = os.environ.get("PORT", "8080")
  
@@ -26,8 +26,8 @@ class Config(object):
     BOT_CHANNEL_USERNAME = os.environ.get("BOT_CHANNEL_USERNAME", "Bots_Nation")
     SUPPORT_CHANNEL_NAME = os.environ.get("SUPPORT_CHANNEL_NAME", "ʙᴏᴛs ɴᴀᴛɪᴏɴ sᴜᴘᴘᴏʀᴛ")
     SUPPORT_CHANNEL_USERNAME = os.environ.get("SUPPORT_CHANNEL_USERNAME", "Bots_Nation_Support")
-    BOT_USERNAME = os.environ.get("BOT_USERNAME", "AnimeRenameBot")
-    BOT_NAME = os.environ.get("BOT_NAME", "Sᴀsᴜᴋᴇ Uᴄʜɪʜᴀ")
+    BOT_USERNAME = os.environ.get("BOT_USERNAME", "AutoRenamerXBot")
+    BOT_NAME = os.environ.get("BOT_NAME", "𝗔𝘂𝘁𝗼 𝗥𝗲𝗻𝗮𝗺𝗲𝗿 [𝗕𝗼𝘁𝘀 𝗡𝗮𝘁𝗶𝗼𝗻]")
     OWNER_NAME = os.environ.get("OWNER_NAME", " 𝗘𝗥𝗔 『𝗗𝗔𝗥𝗞𝗫𝗦𝗜𝗗𝗘』 ♪")
     OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "DARKXSIDE78")
     DEVELOPER_USERNAME = os.environ.get("DEVELOPER_USERNAME", "FraxxShadow")
@@ -38,7 +38,7 @@ class Config(object):
     TOKEN_ID_LENGTH = 8
     SHORTENER_TOKEN_GEN = 100
     VERSION = "4.1.2"
-    LAST_UPDATED = "2024-04-20"
+    LAST_UPDATED = "2025-05-01"
     DB_VERSION = "1.4.2"
     FLOODWAIT_RETRIES = 999
     FLOODWAIT_WAIT = 30
@@ -50,7 +50,7 @@ class Config(object):
     NORMAL_TASK_LIMIT = 2
     GLOBAL_TOKEN_MODE = True
     GLOBAL_TOKEN_EXPIRY = None
-    SESSION_NAME = "DARKXSIDE78"
+    SESSION_NAME = "Renamer"
     WEBHOOK = bool(os.environ.get("WEBHOOK", "True"))
     WEBHOOK_PORT = os.environ.get("WEBHOOK_PORT", "8000")
 
