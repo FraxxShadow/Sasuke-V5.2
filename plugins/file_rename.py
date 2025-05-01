@@ -32,6 +32,8 @@ from typing import Dict, List, Optional, Set
 from collections import deque
 from pyrogram import Client, filters
 import html
+from collections import deque
+from typing import Deque, Tuple
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -48,78 +50,131 @@ PREMIUM_MODE = Config.GLOBAL_TOKEN_MODE
 PREMIUM_MODE_EXPIRY = Config.GLOBAL_TOKEN_MODE
 CON_LIMIT_ADMIN = Config.ADMIN_OR_PREMIUM_TASK_LIMIT
 CON_LIMIT_NORMAL = Config.NORMAL_TASK_LIMIT
+ADMIN_MODE = False
+ADMINS = set(Config.ADMIN)
+
+@Client.on_message(filters.command("admin_mode"))
+async def admin_mode(client, message):
+    user_id = message.from_user.id
+    if user_id not in ADMINS:
+        return await message.reply("Aᴅᴍɪɴ ᴏɴʟʏ ᴄᴏᴍᴍᴀɴᴅ!")
+    
+    args = message.text.split()
+    if len(args) < 2:
+        mode = "on" if ADMIN_MODE else "off"
+        return await message.reply(f"Aᴅᴍɪɴ Mᴏᴅᴇ ɪs ᴄᴜʀʀᴇɴᴛʟʏ {mode}")
+    
+    global ADMIN_MODE
+    if args[1].lower() in ("on", "yes", "true"):
+        ADMIN_MODE = True
+        await message.reply("Aᴅᴍɪɴ Mᴏᴅᴇ ᴇɴᴀʙʟᴇᴅ - Oɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ")
+    else:
+        ADMIN_MODE = False
+        await message.reply("Aᴅᴍɪɴ Mᴏᴅᴇ ᴅɪsᴀʙʟᴇᴅ - Aʟʟ ᴜsᴇʀs ᴄᴀɴ ᴀᴄᴄᴇss")
+
+@Client.on_message(filters.command("add_admin"))
+async def add_admin(client, message):
+    if message.from_user.id not in ADMINS:
+        return
+    
+    try:
+        target = message.text.split()[1]
+        if target.startswith("@"):
+            user = await client.get_users(target)
+            ADMINS.add(user.id)
+        else:
+            ADMINS.add(int(target))
+        await message.reply(f"Aᴅᴅᴇᴅ ᴀᴅᴍɪɴ: {target}")
+    except Exception as e:
+        await message.reply(f"Eʀʀᴏʀ: {str(e)}")
 
 class TaskQueue:
     def __init__(self):
-        self.queues: Dict[int, deque] = {}
+        self.queues: Dict[int, Deque[Tuple[str, Message, asyncio.coroutine]] = {}
         self.processing: Dict[int, Set[str]] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
+        self.max_retries = 3
+        self.locks: Dict[int, asyncio.Lock] = {}
 
-    def add_task(self, user_id: int, file_id: str, coro):
+    def add_task(self, user_id: int, file_id: str, message: Message, coro):
+        if ADMIN_MODE and user_id not in ADMINS:
+            asyncio.create_task(message.reply_text("Aᴅᴍɪɴ ᴍᴏᴅᴇ ᴀᴄᴛɪᴠᴇ - Oɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ǫᴜᴇᴜᴇ ғɪʟᴇs!"))
+            return
         if user_id not in self.queues:
             self.queues[user_id] = deque()
             self.processing[user_id] = set()
+            self.locks[user_id] = asyncio.Lock()
             
-        task_id = f"{user_id}:{file_id}"
-        self.queues[user_id].append((file_id, coro))
-        
+        async with self.locks[user_id]:
+            self.queues[user_id].append((file_id, message, coro))
+            
         if user_id not in USER_SEMAPHORES:
             concurrency_limit = CON_LIMIT_ADMIN if user_id in Config.ADMIN else CON_LIMIT_NORMAL
             USER_SEMAPHORES[user_id] = asyncio.Semaphore(concurrency_limit)
             USER_LIMITS[user_id] = concurrency_limit
             
-        if len(self.processing.get(user_id, set())) < USER_LIMITS[user_id]:
-            asyncio.create_task(self._process_queue(user_id))
+        asyncio.create_task(self._process_user_queue(user_id))
 
-    async def _process_queue(self, user_id: int):
-        if user_id not in self.queues or not self.queues[user_id]:
-            return
-            
+    async def _process_user_queue(self, user_id: int):
         semaphore = USER_SEMAPHORES.get(user_id)
         if not semaphore:
             return
-            
+
         async with semaphore:
-            if not self.queues[user_id]:
-                return
-                
-            file_id, coro = self.queues[user_id].popleft()
-            task_id = f"{user_id}:{file_id}"
-            
-            self.processing[user_id].add(file_id)
-            try:
-                self.tasks[task_id] = asyncio.create_task(coro)
-                await self.tasks[task_id]
-            except Exception as e:
-                logger.error(f"Task error: {e}")
-            finally:
-                self.processing[user_id].discard(file_id)
-                self.tasks.pop(task_id, None)
-                
-            if self.queues[user_id]:
-                asyncio.create_task(self._process_queue(user_id))
-    
+            while True:
+                async with self.locks[user_id]:
+                    if not self.queues.get(user_id):
+                        break
+                    file_id, message, coro = self.queues[user_id].popleft()
+                    self.processing[user_id].add(file_id)
+
+                task_id = f"{user_id}:{file_id}"
+                try:
+                    for attempt in range(self.max_retries):
+                        try:
+                            self.tasks[task_id] = asyncio.create_task(coro)
+                            await self.tasks[task_id]
+                            break
+                        except FloodWait as e:
+                            await asyncio.sleep(e.value + 1)
+                            logger.warning(f"FloodWait for {user_id}: Retry {attempt+1}/{self.max_retries}")
+                        except Exception as e:
+                            logger.error(f"Task error (attempt {attempt+1}): {e}")
+                            if attempt == self.max_retries - 1:
+                                await self._handle_failure(message, file_id, e)
+                finally:
+                    async with self.locks[user_id]:
+                        self.processing[user_id].discard(file_id)
+                        self.tasks.pop(task_id, None)
+
+    async def _handle_failure(self, message: Message, file_id: str, error: Exception):
+        try:
+            await message.reply_text(
+                f"➠ Fᴀɪʟᴇᴅ ᴛᴏ ᴘʀᴏᴄᴇss ғɪʟᴇ ᴀғᴛᴇʀ {self.max_retries} ᴀᴛᴛᴇᴍᴘᴛs\n"
+                f"➠ Fɪʟᴇ ID: {file_id}\n"
+                f"➠ Eʀʀᴏʀ: {str(error)}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send error message: {e}")
     def get_queue_status(self, user_id: int) -> dict:
-        return {
-            "queued": len(self.queues.get(user_id, [])),
-            "processing": len(self.processing.get(user_id, set())),
-            "total": len(self.queues.get(user_id, [])) + len(self.processing.get(user_id, set()))
-        }
-    
-    def cancel_all(self, user_id: int) -> int:
-        if user_id not in self.queues:
-            return 0
+        async with self.locks.get(user_id, asyncio.Lock()):
+            return {
+                "queued": len(self.queues.get(user_id, [])),
+                "processing": len(self.processing.get(user_id, set())),
+                "total": len(self.queues.get(user_id, [])) + len(self.processing.get(user_id, set()))
+            }
+
+    async def cancel_all(self, user_id: int) -> int:
+        async with self.locks.get(user_id, asyncio.Lock()):
+            canceled = len(self.queues.get(user_id, []))
+            self.queues[user_id].clear()
             
-        canceled = len(self.queues[user_id])
-        self.queues[user_id].clear()
-        
-        for file_id in list(self.processing.get(user_id, set())):
-            task_id = f"{user_id}:{file_id}"
-            task = self.tasks.get(task_id)
-            if task and not task.done():
-                task.cancel()
-                
-        return canceled
+            for file_id in list(self.processing.get(user_id, set())):
+                task_id = f"{user_id}:{file_id}"
+                task = self.tasks.get(task_id)
+                if task and not task.done():
+                    task.cancel()
+            return canceled
 
 task_queue = TaskQueue()
 
@@ -163,6 +218,9 @@ def detect_quality(file_name):
 @Client.on_message(filters.command("ssequence") & filters.private)
 async def start_sequence(client, message: Message):
     user_id = message.from_user.id
+    if ADMIN_MODE and user_id not in ADMINS:
+        return await message.reply_text("**Aᴅᴍɪɴ ᴍᴏᴅᴇ ɪs ᴀᴄᴛɪᴠᴇ - Oɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ sᴇǫᴜᴇɴᴄᴇs!**")
+        
     if user_id in active_sequences:
         await message.reply_text("**A sᴇǫᴜᴇɴᴄᴇ ɪs ᴀʟʀᴇᴀᴅʏ ᴀᴄᴛɪᴠᴇ! Usᴇ /esequence ᴛᴏ ᴇɴᴅ ɪᴛ.**")
     else:
@@ -174,75 +232,87 @@ async def start_sequence(client, message: Message):
 @Client.on_message(filters.command("esequence") & filters.private)
 async def end_sequence(client, message: Message):
     user_id = message.from_user.id
+    if ADMIN_MODE and user_id not in ADMINS:
+        return await message.reply_text("**Aᴅᴍɪɴ ᴍᴏᴅᴇ ɪs ᴀᴄᴛɪᴠᴇ - Oɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ sᴇǫᴜᴇɴᴄᴇs!**")
+    
     if user_id not in active_sequences:
-        await message.reply_text("**Nᴏ ᴀᴄᴛɪᴠᴇ sᴇǫᴜᴇɴᴄᴇ ғᴏᴜɴᴅ!**\n**Aᴄᴛɪᴠᴀᴛᴇ sᴇǫᴜᴇɴᴄᴇ ʙʏ ᴜsɪɴɢ /ssequence**")
-        return
+        return await message.reply_text("**Nᴏ ᴀᴄᴛɪᴠᴇ sᴇǫᴜᴇɴᴄᴇ ғᴏᴜɴᴅ!**\n**Usᴇ /ssequence ᴛᴏ sᴛᴀʀᴛ ᴏɴᴇ.**")
 
     file_list = active_sequences.pop(user_id, [])
     delete_messages = message_ids.pop(user_id, [])
 
     if not file_list:
-        await message.reply_text("**Nᴏ ғɪʟᴇs ᴡᴇʀᴇ sᴇɴᴛ ɪɴ ᴛʜɪs sᴇǫᴜᴇɴᴄᴇ!**")
-        return
+        return await message.reply_text("**No files received in this sequence!**")
+
+    quality_order = {
+        "144p": 1, "240p": 2, "360p": 3, "480p": 4,
+        "720p": 5, "1080p": 6, "1440p": 7, "2160p": 8
+    }
+
+    def extract_quality(filename):
+        filename = filename.lower()
+        patterns = [
+            (r'2160p|4k', '2160p'),
+            (r'1440p|2k', '1440p'),
+            (r'1080p|fhd', '1080p'),
+            (r'720p|hd', '720p'),
+            (r'480p|sd', '480p'),
+            (r'(\d{3,4})p', lambda m: f"{m.group(1)}p")
+        ]
+        
+        for pattern, value in patterns:
+            match = re.search(pattern, filename)
+            if match:
+                return value if isinstance(value, str) else value(match)
+        return "unknown"
 
     def sorting_key(f):
-        file_name = f.get("file_name", "")
-        season, episode = extract_season_episode(file_name)
-        quality = extract_quality(file_name)
+        filename = f["file_name"].lower()
         
-        quality = quality.lower().replace(" ", "")
-        if quality.isdigit():
-            quality += "p"
+        # Extract season and episode
+        season = episode = 0
+        season_match = re.search(r's(\d+)', filename)
+        episode_match = re.search(r'e(\d+)', filename) or re.search(r'ep?(\d+)', filename)
         
-        quality_order = {
-            "144p": 1,
-            "240p": 2,
-            "360p": 3,
-            "480p": 4,
-            "720p": 5, 
-            "1080p": 6,
-            "1440p": 7,
-            "2160p": 8
-        }
-        quality_priority = quality_order.get(quality, 9)
-        
-        try:
-            season_str = str(season).upper().replace('S', '').strip()
-            season_num = int(season_str) if season_str.isdigit() else 0
-
-            episode_str = str(episode).strip()
-            episode_num = int(episode_str) if episode_str.isdigit() else 0
-            padded_episode = f"{episode_num:02d}"
-        except Exception:
-            season_num = 0
-            padded_episode = "00"
-        
-        return (season_num, quality_priority, padded_episode, file_name)
-
-    sorted_files = sorted(file_list, key=sorting_key)
-
-    await message.reply_text(f"**Sᴇǫᴜᴇɴᴄᴇ ᴇɴᴅᴇᴅ! Sᴇɴᴅɪɴɢ {len(sorted_files)} ғɪʟᴇs ʙᴀᴄᴋ...**")
-
-
-    for index, file in enumerate(sorted_files):
-        try:
-            await client.send_document(
-                message.chat.id,
-                file["file_id"],
-                caption=f"**{file.get('file_name', '')}**"
-            )
+        if season_match:
+            season = int(season_match.group(1))
+        if episode_match:
+            episode = int(episode_match.group(1))
             
-            if index < len(sorted_files) - 1:
-                await asyncio.sleep(0.5)
-        except FloodWait as e:
-            await asyncio.sleep(e.value + 1)
-        except Exception as e:
-            logger.error(f"Error sending file: {e}")
+        # Get quality priority
+        quality = extract_quality(filename)
+        quality_priority = quality_order.get(quality.lower(), 9)
+        
+        # Pad episode number for proper sorting
+        padded_episode = f"{episode:04d}"
+        
+        return (season, padded_episode, quality_priority, filename)
 
     try:
-        await client.delete_messages(chat_id=message.chat.id, message_ids=delete_messages)
+        sorted_files = sorted(file_list, key=sorting_key)
+        await message.reply_text(f"**Sequence completed!**\nSending {len(sorted_files)} files in order...")
+
+        for index, file in enumerate(sorted_files):
+            try:
+                await client.send_document(
+                    message.chat.id,
+                    file["file_id"],
+                    caption=f"`{file['file_name']}`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                if index < len(sorted_files) - 1:
+                    await asyncio.sleep(0.5)
+            except FloodWait as e:
+                await asyncio.sleep(e.value + 1)
+            except Exception as e:
+                logger.error(f"Error sending file {file['file_name']}: {e}")
+
+        if delete_messages:
+            await client.delete_messages(message.chat.id, delete_messages)
+
     except Exception as e:
-        logger.error(f"Error deleting messages: {e}")
+        logger.error(f"Sequence processing failed: {e}")
+        await message.reply_text("❌ Failed to process sequence! Check logs for details.")
 
 @Client.on_message(filters.command("premium") & filters.private)
 async def global_premium_control(client, message: Message):
@@ -303,23 +373,20 @@ async def check_premium_mode():
         )
 
 SEASON_EPISODE_PATTERNS = [
-    (re.compile(r'S(\d+)\s+(\d{3,4}p?)\b'), ('season', None)), 
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'Season\s*(\d+)\s*Episode\s*(\d+)', re.IGNORECASE), ('season', 'episode')),
     (re.compile(r'\[S(\d+)\]\[E(\d+)\]'), ('season', 'episode')),
-    (re.compile(r'S(\d+)[^\d]*(\d+)'), ('season', 'episode')),
+    (re.compile(r'S(\d+)[^\d]+(\d{1,3})\b'), ('season', 'episode')),
     (re.compile(r'(?:E|EP|Episode)\s*(\d+)', re.IGNORECASE), (None, 'episode')),
-    (re.compile(r'\b(\d+)\b'), (None, 'episode'))
+    (re.compile(r'\b(\d{1,3})\b'), (None, 'episode'))
 ]
 
 QUALITY_PATTERNS = [
-    (re.compile(r'\b(S\d+\s*)?(\d{3,4})p?\b'), lambda m: f"{m.group(2)}p"),
+    (re.compile(r'\b(\d{3,4})p?\b'), lambda m: f"{m.group(1)}p"),
     (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "2160p"),
     (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "1440p"),
     (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "4k"),
-    (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\b(4kX264|4kx265)\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1))
@@ -480,6 +547,9 @@ async def add_metadata(input_path, output_path, user_id):
 async def auto_rename_files(client, message: Message):
     user_id = message.from_user.id
     user = message.from_user
+
+    if ADMIN_MODE and user_id not in ADMINS:
+        return await message.reply_text("Aᴅᴍɪɴ ᴍᴏᴅᴇ ɪs ᴀᴄᴛɪᴠᴇ - Oɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs ʙᴏᴛ!")
     
     if message.document:
         file_id = message.document.file_id
@@ -751,7 +821,7 @@ async def auto_rename_files(client, message: Message):
         f"**Usᴇ /queue ᴛᴏ ᴄʜᴇᴄᴋ sᴛᴀᴛᴜs**"
     )
     
-    task_queue.add_task(user_id, file_id, process_file())
+    task_queue.add_task(user_id, file_id, message, process_file())
             
 @Client.on_message(filters.command("renamed") & (filters.group | filters.private))
 async def renamed_stats(client, message: Message):
