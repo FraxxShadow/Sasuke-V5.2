@@ -18,7 +18,7 @@ class Config(object):
     FORCE_PIC   = os.environ.get("FORCE_PIC", "https://www.wallpaperflare.com/static/591/238/424/naruto-shippuuden-uzumaki-naruto-uchiha-sasuke-rinnegan-wallpaper.jpg")
     ADMINS       = [int(admins) if id_pattern.search(admins) else admins for admins in os.environ.get('ADMINS', '6302971969 7086472788 6039119180 1136967391').split()]
     ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN', '6302971969 7086472788 6039119180 1136967391').split()]
-    FORCE_SUB_CHANNELS = os.environ.get('FORCE_SUB_CHANNELS', '@Bots_Nation').split(', ')
+    FORCE_SUB_CHANNELS = os.environ.get('FORCE_SUB_CHANNELS', 'Bots_Nation').split(', ')
     LOG_CHANNEL = os.environ.get("LOG_CHANNEL", "-1002385922224")
     DUMP_CHANNEL = os.environ.get("DUMP_CHANNEL", "-1002264269433")
     DUMP = True
@@ -26,7 +26,7 @@ class Config(object):
     BOT_CHANNEL_USERNAME = os.environ.get("BOT_CHANNEL_USERNAME", "Bots_Nation")
     SUPPORT_CHANNEL_NAME = os.environ.get("SUPPORT_CHANNEL_NAME", "ʙᴏᴛs ɴᴀᴛɪᴏɴ sᴜᴘᴘᴏʀᴛ")
     SUPPORT_CHANNEL_USERNAME = os.environ.get("SUPPORT_CHANNEL_USERNAME", "Bots_Nation_Support")
-    BOT_USERNAME = os.environ.get("BOT_USERNAME", "AnimeRenamerBot")
+    BOT_USERNAME = os.environ.get("BOT_USERNAME", "AnimeRenameBot")
     BOT_NAME = os.environ.get("BOT_NAME", "Sᴀsᴜᴋᴇ Uᴄʜɪʜᴀ")
     OWNER_NAME = os.environ.get("OWNER_NAME", " 𝗘𝗥𝗔 『𝗗𝗔𝗥𝗞𝗫𝗦𝗜𝗗𝗘』 ♪")
     OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "DARKXSIDE78")
